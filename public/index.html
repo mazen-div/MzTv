@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MzTv - Premium IPTV Player</title>
+    <link rel="icon" type="image/png" href="logo.png">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <!-- Hls.js & Mpegts.js for advanced video playback in browser -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mpegts.js@1.7.3/dist/mpegts.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- App-wide Toast Notification -->
+    <div id="toastNotification" class="toast-notification hidden">
+        <i class="fa-solid fa-circle-info toast-icon"></i>
+        <span class="toast-message">Message goes here</span>
+    </div>
+
+    <!-- 1. LOGIN SCREEN -->
+    <section id="loginScreen" class="login-screen">
+        <div class="login-background-overlay"></div>
+        <div class="login-card">
+            <div class="login-logo animate-glow">
+                <img src="logo.png" alt="MzTv Logo" class="app-logo-img">
+                <span class="logo-text">MzTv</span>
+            </div>
+            <p class="login-tagline">Stream your favorite channels, movies, and series instantly.</p>
+            
+            <form id="loginForm" class="login-form">
+                <div class="form-group">
+                    <label for="serverUrl"><i class="fa-solid fa-server"></i> Server URL</label>
+                    <input type="url" id="serverUrl" placeholder="http://your-iptv-server.com:8080" required autocomplete="url">
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="username"><i class="fa-solid fa-user"></i> Username</label>
+                        <input type="text" id="username" placeholder="Enter username" required autocomplete="username">
+                    </div>
+                    <div class="form-group">
+                        <label for="password"><i class="fa-solid fa-key"></i> Password</label>
+                        <div class="password-input-wrapper">
+                            <input type="password" id="password" placeholder="Enter password" required autocomplete="current-password">
+                            <button type="button" id="togglePasswordBtn" class="password-toggle-btn"><i class="fa-solid fa-eye"></i></button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-options">
+                    <label class="checkbox-container">
+                        <input type="checkbox" id="rememberMe" checked>
+                        <span class="checkmark"></span>
+                        Remember credentials
+                    </label>
+                </div>
+
+                <button type="submit" id="loginBtn" class="btn-primary">
+                    <span class="btn-text">Connect to Server</span>
+                    <i class="fa-solid fa-arrow-right btn-icon"></i>
+                    <div class="spinner hidden"></div>
+                </button>
+            </form>
+            <div id="loginError" class="login-error-msg hidden">
+                <i class="fa-solid fa-circle-exclamation"></i>
+                <span id="loginErrorText">Connection failed. Check details.</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- 2. MAIN APPLICATION DASHBOARD (Hidden at start) -->
+    <div id="appDashboard" class="app-dashboard hidden">
+        <!-- Sidebar Navigation -->
+        <aside class="app-sidebar">
+            <div class="sidebar-header">
+                <img src="logo.png" alt="MzTv Logo" class="app-logo-img sidebar-logo-img">
+                <span class="logo-text">MzTv</span>
+            </div>
+            
+            <nav class="sidebar-nav">
+                <a href="#" class="nav-link active" data-view="home">
+                    <i class="fa-solid fa-house"></i>
+                    <span>Home</span>
+                </a>
+                <a href="#" class="nav-link" data-view="settings">
+                    <i class="fa-solid fa-sliders"></i>
+                    <span>Settings</span>
+                </a>
+                <a href="#" class="nav-link" data-view="usage">
+                    <i class="fa-solid fa-chart-line"></i>
+                    <span>Usage</span>
+                </a>
+            </nav>
+
+            <!-- User Panel -->
+            <div class="sidebar-user-panel">
+                <div class="user-avatar">
+                    <i class="fa-solid fa-user-astronaut"></i>
+                </div>
+                <div class="user-details">
+                    <h4 class="username-display" id="userDisplayName">User</h4>
+                    <p class="account-expiry" id="expiryDisplay">Loading...</p>
+                </div>
+                <button id="logoutBtn" class="logout-btn" title="Logout">
+                    <i class="fa-solid fa-power-off"></i>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="dashboard-content">
+            
+            <!-- VIEW: HOME (Main Page) -->
+            <section id="homeView" class="dashboard-view">
+                <div class="content-header">
+                    <h2><i class="fa-solid fa-house"></i> Home Dashboard</h2>
+                </div>
+                
+                <div class="home-container scrollbar">
+                    <div class="home-grid">
+                        <!-- CARD: LIVE TV -->
+                        <div class="dashboard-card live-card" id="cardLive">
+                            <button class="card-reload-btn" id="reloadLiveBtn" title="Reload Live TV">
+                                <i class="fa-solid fa-arrows-rotate"></i>
+                            </button>
+                            <div class="card-content" id="contentLive">
+                                <div class="card-icon"><i class="fa-solid fa-tv"></i></div>
+                                <h3>Live TV</h3>
+                                <p>Stream live TV channels, news, sports, and international broadcasts.</p>
+                                <span class="card-status" id="statusLive">Click to open</span>
+                            </div>
+                            <!-- Card loader overlay -->
+                            <div class="card-loader hidden" id="loaderLive">
+                                <div class="spinner"></div>
+                                <span class="loader-percent" id="percentLive">0%</span>
+                                <span class="loader-text">Downloading channels...</span>
+                            </div>
+                            <!-- Progress bar -->
+                            <div class="card-progress-bar">
+                                <div class="card-progress-fill" id="progressFillLive"></div>
+                            </div>
+                        </div>
+
+                        <!-- CARD: MOVIES -->
+                        <div class="dashboard-card movies-card" id="cardMovies">
+                            <button class="card-reload-btn" id="reloadMoviesBtn" title="Reload Movies">
+                                <i class="fa-solid fa-arrows-rotate"></i>
+                            </button>
+                            <div class="card-content" id="contentMovies">
+                                <div class="card-icon"><i class="fa-solid fa-film"></i></div>
+                                <h3>Movies (VOD)</h3>
+                                <p>Watch on-demand movies, cinema releases, and search by genre.</p>
+                                <span class="card-status" id="statusMovies">Click to open</span>
+                            </div>
+                            <div class="card-loader hidden" id="loaderMovies">
+                                <div class="spinner"></div>
+                                <span class="loader-percent" id="percentMovies">0%</span>
+                                <span class="loader-text">Downloading movies...</span>
+                            </div>
+                            <div class="card-progress-bar">
+                                <div class="card-progress-fill" id="progressFillMovies"></div>
+                            </div>
+                        </div>
+
+                        <!-- CARD: SERIES -->
+                        <div class="dashboard-card series-card" id="cardSeries">
+                            <button class="card-reload-btn" id="reloadSeriesBtn" title="Reload TV Series">
+                                <i class="fa-solid fa-arrows-rotate"></i>
+                            </button>
+                            <div class="card-content" id="contentSeries">
+                                <div class="card-icon"><i class="fa-solid fa-layer-group"></i></div>
+                                <h3>TV Series</h3>
+                                <p>Explore full seasons, watch episodes, and keep track of releases.</p>
+                                <span class="card-status" id="statusSeries">Click to open</span>
+                            </div>
+                            <div class="card-loader hidden" id="loaderSeries">
+                                <div class="spinner"></div>
+                                <span class="loader-percent" id="percentSeries">0%</span>
+                                <span class="loader-text">Downloading series...</span>
+                            </div>
+                            <div class="card-progress-bar">
+                                <div class="card-progress-fill" id="progressFillSeries"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- VIEW: LIVE TV -->
+            <section id="liveView" class="dashboard-view hidden">
+                <div class="live-layout">
+                    <!-- Left: Categories Sidebar -->
+                    <div class="live-categories-sidebar pane">
+                        <div class="pane-header">
+                            <h3><i class="fa-solid fa-list"></i> Categories</h3>
+                        </div>
+                        <div class="search-box">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                            <input type="text" id="liveCategorySearch" placeholder="Search categories...">
+                        </div>
+                        <ul class="category-list scrollbar" id="liveCategoryList">
+                            <!-- Injected dynamically -->
+                        </ul>
+                    </div>
+
+                    <!-- Middle: Channels List -->
+                    <div class="live-channels-pane pane">
+                        <div class="pane-header">
+                            <h3 id="currentCategoryTitle">All Channels</h3>
+                            <span class="count-badge" id="channelCount">0</span>
+                        </div>
+                        <div class="search-box">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                            <input type="text" id="liveChannelSearch" placeholder="Search channels...">
+                        </div>
+                        <div class="channel-list-container scrollbar" id="liveChannelList">
+                            <!-- Injected dynamically -->
+                        </div>
+                    </div>
+
+                    <!-- Right: Stream Player and EPG -->
+                    <div class="live-player-pane pane">
+                        <!-- Video Player Wrapper -->
+                        <div class="player-wrapper" id="playerWrapper">
+                            <video id="mainVideoPlayer" preload="auto" playsinline></video>
+                            
+                            <!-- Custom Player Controls Overlay -->
+                            <div class="player-controls-overlay" id="playerControls">
+                                <div class="player-loader" id="playerLoader">
+                                    <div class="spinner-large"></div>
+                                    <p>Buffering stream...</p>
+                                </div>
+
+                                <div class="player-watermark">
+                                    <img src="logo.png" alt="MzTv Logo" class="player-watermark-logo"> MzTv
+                                </div>
+                                
+                                <div class="top-controls">
+                                    <div class="stream-info">
+                                        <h4 id="playerChannelName">No Stream Selected</h4>
+                                        <p id="playerCategoryName">Select a channel to play</p>
+                                    </div>
+                                    <div class="player-status-badges">
+                                        <span class="badge badge-live"><span class="dot"></span> LIVE</span>
+                                        <span class="badge" id="playerCodecBadge">TS</span>
+                                    </div>
+                                </div>
+
+                                <div class="middle-controls">
+                                    <button class="control-btn big-play-btn" id="overlayPlayPauseBtn">
+                                        <i class="fa-solid fa-play"></i>
+                                    </button>
+                                </div>
+
+                                <div class="bottom-controls">
+                                    <!-- Playback progress bar for EPG (hidden in live unless playing, shown for VOD/Series) -->
+                                    <div class="progress-bar-container hidden" id="playerProgressContainer">
+                                        <div class="progress-hover-time" id="progressHoverTime">00:00</div>
+                                        <div class="progress-bar-track">
+                                            <div class="progress-bar-buffer" id="playerProgressBuffer"></div>
+                                            <div class="progress-bar-fill" id="playerProgressFill"></div>
+                                            <div class="progress-bar-handle" id="playerProgressHandle"></div>
+                                        </div>
+                                    </div>
+
+                                    <div class="controls-row">
+                                        <div class="controls-left">
+                                            <button class="control-btn" id="playPauseBtn" title="Play/Pause (Space)">
+                                                <i class="fa-solid fa-play"></i>
+                                            </button>
+                                            
+                                            <div class="volume-container">
+                                                <button class="control-btn" id="muteBtn" title="Mute (M)">
+                                                    <i class="fa-solid fa-volume-high"></i>
+                                                </button>
+                                                <input type="range" class="volume-slider" id="volumeSlider" min="0" max="1" step="0.05" value="1">
+                                            </div>
+
+                                            <span class="time-display hidden" id="playerTimeDisplay">00:00 / 00:00</span>
+                                        </div>
+
+                                        <div class="controls-right">
+                                            <div class="quality-selector-container">
+                                                <button class="control-btn" id="qualityBtn" title="Select Video Quality">
+                                                    <i class="fa-solid fa-gear"></i> <span>Quality</span>
+                                                </button>
+                                                <div class="quality-menu hidden" id="qualityMenu">
+                                                    <!-- Injected dynamically -->
+                                                </div>
+                                            </div>
+                                            <button class="control-btn" id="aspectRatioBtn" title="Change Aspect Ratio">
+                                                <i class="fa-solid fa-expand"></i> <span>Auto</span>
+                                            </button>
+                                            <button class="control-btn" id="pipBtn" title="Picture in Picture">
+                                                <i class="fa-solid fa-images"></i>
+                                            </button>
+                                            <button class="control-btn" id="fullscreenBtn" title="Fullscreen (F)">
+                                                <i class="fa-solid fa-maximize"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- EPG / Details under player -->
+                        <div class="live-epg-details">
+                            <div class="epg-header">
+                                <h3><i class="fa-solid fa-circle-info"></i> Now Playing</h3>
+                            </div>
+                            <div class="epg-content" id="epgDetailsBox">
+                                <p class="no-epg-msg">Select a channel to view program information.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- VIEW: MOVIES (VOD) -->
+            <section id="moviesView" class="dashboard-view hidden">
+                <div class="content-header">
+                    <h2><i class="fa-solid fa-film"></i> Movies (VOD)</h2>
+                </div>
+                
+                <div class="grid-layout-with-sidebar">
+                    <!-- Movies Categories -->
+                    <div class="media-categories pane">
+                        <div class="pane-header">
+                            <h3>Categories</h3>
+                        </div>
+                        <div class="search-box">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                            <input type="text" id="movieCategorySearch" placeholder="Search categories...">
+                        </div>
+                        <ul class="category-list scrollbar" id="movieCategoryList">
+                            <!-- Injected dynamically -->
+                        </ul>
+                    </div>
+
+                    <!-- Movies Cards Grid -->
+                    <div class="media-content-pane">
+                        <div class="media-controls-bar">
+                            <div class="search-box wide">
+                                <i class="fa-solid fa-magnifying-glass"></i>
+                                <input type="text" id="movieSearch" placeholder="Search movies by title...">
+                            </div>
+                            <div class="sort-dropdown">
+                                <label for="movieSort"><i class="fa-solid fa-arrow-down-wide-short"></i> Sort By</label>
+                                <select id="movieSort">
+                                    <option value="name">Title (A-Z)</option>
+                                    <option value="newest">Added Date</option>
+                                    <option value="rating">Rating</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="media-grid scrollbar" id="moviesGrid">
+                            <!-- Injected dynamically -->
+                            <div class="empty-state">
+                                <i class="fa-solid fa-film"></i>
+                                <p>Select a category or search for a movie to get started.</p>
+                            </div>
+                        </div>
+                        <!-- Pagination Controls -->
+                        <div class="pagination-container hidden" id="moviePagination">
+                            <button id="moviePrevBtn" class="btn-secondary pagination-btn" title="Previous Page">
+                                <i class="fa-solid fa-chevron-left"></i> Previous
+                            </button>
+                            <span id="moviePageInfo" class="pagination-info">Page 1 of 1</span>
+                            <button id="movieNextBtn" class="btn-secondary pagination-btn" title="Next Page">
+                                Next <i class="fa-solid fa-chevron-right"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- VIEW: SERIES -->
+            <section id="seriesView" class="dashboard-view hidden">
+                <div class="content-header">
+                    <h2><i class="fa-solid fa-layer-group"></i> TV Series</h2>
+                </div>
+
+                <div class="grid-layout-with-sidebar">
+                    <!-- Series Categories -->
+                    <div class="media-categories pane">
+                        <div class="pane-header">
+                            <h3>Categories</h3>
+                        </div>
+                        <div class="search-box">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                            <input type="text" id="seriesCategorySearch" placeholder="Search categories...">
+                        </div>
+                        <ul class="category-list scrollbar" id="seriesCategoryList">
+                            <!-- Injected dynamically -->
+                        </ul>
+                    </div>
+
+                    <!-- Series Cards Grid -->
+                    <div class="media-content-pane">
+                        <div class="media-controls-bar">
+                            <div class="search-box wide">
+                                <i class="fa-solid fa-magnifying-glass"></i>
+                                <input type="text" id="seriesSearch" placeholder="Search series by title...">
+                            </div>
+                            <div class="sort-dropdown">
+                                <label for="seriesSort"><i class="fa-solid fa-arrow-down-wide-short"></i> Sort By</label>
+                                <select id="seriesSort">
+                                    <option value="name">Title (A-Z)</option>
+                                    <option value="newest">Added Date</option>
+                                    <option value="rating">Rating</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="media-grid scrollbar" id="seriesGrid">
+                            <!-- Injected dynamically -->
+                            <div class="empty-state">
+                                <i class="fa-solid fa-tv"></i>
+                                <p>Select a category or search for a series to get started.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- VIEW: SETTINGS -->
+            <section id="settingsView" class="dashboard-view hidden">
+                <div class="content-header">
+                    <h2><i class="fa-solid fa-sliders"></i> System Settings</h2>
+                </div>
+
+                <div class="settings-container scrollbar">
+                    <div class="settings-card">
+                        <h3><i class="fa-solid fa-user-shield"></i> IPTV Account Info</h3>
+                        <div class="settings-info-grid">
+                            <div class="info-row">
+                                <span class="label">Server Address:</span>
+                                <span class="value" id="settingsServerUrl">-</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="label">Username:</span>
+                                <span class="value" id="settingsUsername">-</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="label">Status:</span>
+                                <span class="value badge-active" id="settingsStatus">-</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="label">Expiry Date:</span>
+                                <span class="value" id="settingsExpiry">-</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="label">Active Connections:</span>
+                                <span class="value" id="settingsConnections">-</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="label">Allowed Formats:</span>
+                                <span class="value" id="settingsFormats">-</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-card">
+                        <h3><i class="fa-solid fa-laptop-code"></i> Preferences</h3>
+                        <div class="form-group inline-setting">
+                            <div>
+                                <label for="settingsFormatSelect">Preferred Stream Format</label>
+                                <p class="setting-desc">MPEG-TS is faster and highly supported. HLS supports multi-resolution adaptive streaming.</p>
+                            </div>
+                            <select id="settingsFormatSelect" class="form-select">
+                                <option value="ts">MPEG-TS (.ts)</option>
+                                <option value="m3u8" selected>HLS (.m3u8)</option>
+                            </select>
+                        </div>
+                        <div class="form-group inline-setting">
+                            <div>
+                                <label for="settingsForceProxy">Force Stream Proxying</label>
+                                <p class="setting-desc">Route all video data through the local server to bypass potential SSL or CORS errors.</p>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="settingsForceProxy" checked>
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                        <div class="form-group inline-setting">
+                            <div>
+                                <label>Offline Media Cache</label>
+                                <p class="setting-desc" id="mediaCacheSizeDesc">Checking cache size...</p>
+                            </div>
+                            <button id="clearMediaCacheBtn" class="btn-secondary" style="width: auto;">
+                                <i class="fa-solid fa-trash-can"></i> Clear Media Cache
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="settings-card danger-zone">
+                        <h3><i class="fa-solid fa-triangle-exclamation"></i> Danger Zone</h3>
+                        <p>Clearing data will remove all stored credentials and preferences. You will be logged out.</p>
+                        <button id="clearDataBtn" class="btn-danger">
+                            <i class="fa-solid fa-trash-can"></i> Reset Application Data
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- VIEW: USAGE -->
+            <section id="usageView" class="dashboard-view hidden">
+                <div class="content-header">
+                    <h2><i class="fa-solid fa-chart-line"></i> Data Usage Monitor</h2>
+                </div>
+
+                <div class="settings-container scrollbar">
+                    <div class="usage-summary-grid">
+                        <div class="usage-card main-card">
+                            <div class="card-icon"><i class="fa-solid fa-network-wired"></i></div>
+                            <div class="card-info">
+                                <span class="label">Total Internet Data Used</span>
+                                <h2 class="value" id="usageTotalVal">0.00 MB</h2>
+                            </div>
+                        </div>
+                        
+                        <div class="usage-card">
+                            <div class="card-icon"><i class="fa-solid fa-tv"></i></div>
+                            <div class="card-info">
+                                <span class="label">Video Streams & Downloads</span>
+                                <h3 class="value" id="usageStreamVal">0.00 MB</h3>
+                            </div>
+                        </div>
+
+                        <div class="usage-card">
+                            <div class="card-icon"><i class="fa-solid fa-database"></i></div>
+                            <div class="card-info">
+                                <span class="label">API & Metadata Queries</span>
+                                <h3 class="value" id="usageApiVal">0.00 MB</h3>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-card">
+                        <h3><i class="fa-solid fa-circle-info"></i> Bandwidth Statistics</h3>
+                        <p class="setting-desc" style="margin-bottom: 20px;">
+                            This monitors the real-time data transferred between this application and the IPTV server.
+                        </p>
+                        <div class="settings-info-grid">
+                            <div class="info-row">
+                                <span class="label">Current Session Start:</span>
+                                <span class="value" id="usageStartTime">-</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="label">Proxy Mode:</span>
+                                <span class="value" id="usageProxyStatus">Enabled (Full tracking)</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="label">Status:</span>
+                                <span class="value badge-active">Active</span>
+                            </div>
+                        </div>
+                        
+                        <button id="resetUsageBtn" class="btn-secondary" style="margin-top: 24px; width: auto;">
+                            <i class="fa-solid fa-rotate-left"></i> Reset Usage Stats
+                        </button>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- MOVIE/SERIES DETAILS OVERLAY MODAL -->
+    <div id="mediaDetailsModal" class="modal-overlay hidden">
+        <div class="modal-card scrollbar">
+            <button class="modal-close-btn" id="modalCloseBtn"><i class="fa-solid fa-xmark"></i></button>
+            <div class="modal-hero">
+                <img id="modalBackdrop" src="" alt="Backdrop" class="modal-backdrop-img">
+                <div class="modal-hero-overlay"></div>
+                <div class="modal-hero-content">
+                    <div class="modal-poster-wrapper">
+                        <img id="modalPoster" src="" alt="Poster" class="modal-poster-img">
+                    </div>
+                    <div class="modal-info">
+                        <h1 id="modalTitle">Title</h1>
+                        <p class="modal-meta">
+                            <span id="modalYear"><i class="fa-solid fa-calendar"></i> -</span>
+                            <span id="modalRating"><i class="fa-solid fa-star"></i> -</span>
+                            <span id="modalGenre"><i class="fa-solid fa-tag"></i> -</span>
+                        </p>
+                        <p class="modal-plot" id="modalPlot">No description available for this title.</p>
+                        <div class="modal-actions">
+                            <button id="modalPlayBtn" class="btn-primary">
+                                <i class="fa-solid fa-play"></i> Watch Now
+                            </button>
+                            <div class="download-action-group">
+                                <a id="modalDownloadBtn" class="btn-secondary" href="" target="_blank" download>
+                                    <i class="fa-solid fa-download"></i> Download Movie
+                                </a>
+                                <span class="download-quality-badge" title="Downloads the original quality file hosted by your provider"><i class="fa-solid fa-circle-info"></i> Original Source Quality</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Series seasons/episodes block -->
+            <div class="modal-body hidden" id="modalSeriesBlock">
+                <div class="seasons-bar-row">
+                    <h3>Seasons</h3>
+                    <select id="seasonSelector" class="form-select season-select">
+                        <!-- Seasons dynamically generated -->
+                    </select>
+                </div>
+                <div class="episodes-list" id="episodesList">
+                    <!-- Episodes dynamically generated -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
