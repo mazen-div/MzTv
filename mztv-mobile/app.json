@@ -2,7 +2,7 @@
   "expo": {
     "name": "MzTv",
     "slug": "mztv-mobile",
-    "version": "1.0.0",
+    "version": "1.2.0",
     "orientation": "landscape",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -22,10 +22,16 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0b0c10"
       },
-      "package": "com.mztv.app"
+      "package": "com.mztv.app",
+      "versionCode": 3
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "30c1656b-eece-4ca6-9ae5-a16dc3406447"
+      }
     }
   }
 }

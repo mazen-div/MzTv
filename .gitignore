@@ -1,0 +1,8 @@
+node_modules/
+cache/
+mztv-mobile/node_modules/
+mztv-mobile/.expo/
+mztv-mobile/android/
+mztv-mobile/ios/
+.env
+*.log

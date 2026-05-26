@@ -146,6 +146,60 @@ app.get('/api/proxy', (req, res) => {
     }
 });
 
+// Helper to follow HTTP redirects and retrieve final URL and response stream
+function getFinalUrlAndResponse(targetUrl, requestHeaders, maxRedirects = 5) {
+    return new Promise((resolve, reject) => {
+        let currentUrl = targetUrl;
+        let redirectCount = 0;
+
+        function makeRequest() {
+            try {
+                const parsedUrl = urlModule.parse(currentUrl);
+                const client = parsedUrl.protocol === 'https:' ? https : http;
+                const options = {
+                    hostname: parsedUrl.hostname,
+                    port: parsedUrl.port,
+                    path: parsedUrl.path,
+                    method: 'GET',
+                    headers: requestHeaders || {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                    }
+                };
+
+                const req = client.request(options, (res) => {
+                    const status = res.statusCode;
+                    if (status >= 300 && status < 400 && res.headers.location) {
+                        if (redirectCount >= maxRedirects) {
+                            reject(new Error('Too many redirects'));
+                            return;
+                        }
+                        redirectCount++;
+                        // Resolve relative or absolute location URL
+                        const nextUrl = urlModule.resolve(currentUrl, res.headers.location);
+                        console.log(`[Redirect] Redirecting to: ${nextUrl} (Status ${status})`);
+                        currentUrl = nextUrl;
+                        // Consume response body to free memory and prevent leaks
+                        res.resume();
+                        makeRequest();
+                    } else {
+                        resolve({ finalUrl: currentUrl, response: res });
+                    }
+                });
+
+                req.on('error', (err) => {
+                    reject(err);
+                });
+
+                req.end();
+            } catch (err) {
+                reject(err);
+            }
+        }
+
+        makeRequest();
+    });
+}
+
 // Stream proxy endpoint with HTTP range request forwarding & offline disk cache
 app.get('/api/stream', (req, res) => {
     const targetUrl = req.query.url;
@@ -155,7 +209,6 @@ app.get('/api/stream', (req, res) => {
 
     try {
         const parsedUrl = urlModule.parse(targetUrl);
-        const client = parsedUrl.protocol === 'https:' ? https : http;
 
         // Check if this is a VOD request (movie or series episode)
         const isVOD = targetUrl.includes('/movie/') || targetUrl.includes('/series/');
@@ -184,6 +237,49 @@ app.get('/api/stream', (req, res) => {
             return res.sendFile(cachePath);
         }
 
+        // If VOD is not cached, start downloading it in the background
+        if (cachePath && !activeDownloads.has(cachePath)) {
+            const tempPath = cachePath + '.tmp';
+            activeDownloads.add(cachePath);
+            
+            console.log(`[Media Cache] Starting background download for: ${cacheFilename}`);
+            const fileStream = fs.createWriteStream(tempPath);
+            
+            const downloadHeaders = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            };
+
+            getFinalUrlAndResponse(targetUrl, downloadHeaders)
+                .then(({ finalUrl, response: downloadRes }) => {
+                    if (downloadRes.statusCode === 200) {
+                        downloadRes.pipe(fileStream);
+                        fileStream.on('finish', () => {
+                            fileStream.close();
+                            fs.rename(tempPath, cachePath, (err) => {
+                                activeDownloads.delete(cachePath);
+                                if (err) {
+                                    console.error(`[Media Cache] Rename error for ${cacheFilename}:`, err);
+                                    fs.unlink(tempPath, () => {});
+                                } else {
+                                    console.log(`[Media Cache] Successfully cached VOD file: ${cacheFilename}`);
+                                }
+                            });
+                        });
+                    } else {
+                        fileStream.close();
+                        fs.unlink(tempPath, () => {});
+                        activeDownloads.delete(cachePath);
+                        console.error(`[Media Cache] Downloader status code: ${downloadRes.statusCode}`);
+                    }
+                })
+                .catch((err) => {
+                    fileStream.close();
+                    fs.unlink(tempPath, () => {});
+                    activeDownloads.delete(cachePath);
+                    console.error(`[Media Cache] Downloader error: ${err.message}`);
+                });
+        }
+
         // Propagate headers, especially Range for seeking
         const headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
@@ -194,100 +290,40 @@ app.get('/api/stream', (req, res) => {
             headers['range'] = req.headers.range;
         }
 
-        const options = {
-            hostname: parsedUrl.hostname,
-            port: parsedUrl.port,
-            path: parsedUrl.path,
-            method: 'GET',
-            headers: headers
-        };
+        getFinalUrlAndResponse(targetUrl, headers)
+            .then(({ finalUrl, response: proxyRes }) => {
+                // Copy status and headers from IPTV server response
+                const responseHeaders = { ...proxyRes.headers };
+                
+                // Explicitly set access control headers
+                responseHeaders['Access-Control-Allow-Origin'] = '*';
+                responseHeaders['Access-Control-Allow-Headers'] = 'Range, Content-Type, Content-Disposition';
 
-        // If VOD is not cached, start downloading it in the background
-        if (cachePath && !activeDownloads.has(cachePath)) {
-            const tempPath = cachePath + '.tmp';
-            activeDownloads.add(cachePath);
-            
-            console.log(`[Media Cache] Starting background download for: ${cacheFilename}`);
-            const fileStream = fs.createWriteStream(tempPath);
-            
-            const downloadOptions = {
-                hostname: parsedUrl.hostname,
-                port: parsedUrl.port,
-                path: parsedUrl.path,
-                method: 'GET',
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                // Add download Content-Disposition attachment header if requested
+                if (req.query.download === 'true') {
+                    const parsedFinalUrl = urlModule.parse(finalUrl);
+                    const filename = path.basename(parsedFinalUrl.pathname) || 'video.mp4';
+                    responseHeaders['Content-Disposition'] = `attachment; filename="${filename}"`;
+                    if (!responseHeaders['content-type']) {
+                        responseHeaders['content-type'] = 'application/octet-stream';
+                    }
                 }
-            };
 
-            const downloadReq = client.request(downloadOptions, (downloadRes) => {
-                if (downloadRes.statusCode === 200) {
-                    downloadRes.pipe(fileStream);
-                    fileStream.on('finish', () => {
-                        fileStream.close();
-                        fs.rename(tempPath, cachePath, (err) => {
-                            activeDownloads.delete(cachePath);
-                            if (err) {
-                                console.error(`[Media Cache] Rename error for ${cacheFilename}:`, err);
-                                fs.unlink(tempPath, () => {});
-                            } else {
-                                console.log(`[Media Cache] Successfully cached VOD file: ${cacheFilename}`);
-                            }
-                        });
-                    });
-                } else {
-                    fileStream.close();
-                    fs.unlink(tempPath, () => {});
-                    activeDownloads.delete(cachePath);
-                    console.error(`[Media Cache] Downloader status code: ${downloadRes.statusCode}`);
+                res.writeHead(proxyRes.statusCode, responseHeaders);
+
+                proxyRes.on('data', (chunk) => {
+                    usageStats.streamBytes += chunk.length;
+                    usageStats.totalBytes += chunk.length;
+                });
+
+                proxyRes.pipe(res);
+            })
+            .catch((err) => {
+                console.error('Stream proxy error:', err.message);
+                if (!res.headersSent) {
+                    res.status(500).send('Stream proxy failed: ' + err.message);
                 }
             });
-
-            downloadReq.on('error', (err) => {
-                fileStream.close();
-                fs.unlink(tempPath, () => {});
-                activeDownloads.delete(cachePath);
-                console.error(`[Media Cache] Downloader error: ${err.message}`);
-            });
-
-            downloadReq.end();
-        }
-
-        const proxyReq = client.request(options, (proxyRes) => {
-            // Copy status and headers from IPTV server response
-            const responseHeaders = { ...proxyRes.headers };
-            
-            // Explicitly set access control headers
-            responseHeaders['Access-Control-Allow-Origin'] = '*';
-            responseHeaders['Access-Control-Allow-Headers'] = 'Range, Content-Type, Content-Disposition';
-
-            // Add download Content-Disposition attachment header if requested
-            if (req.query.download === 'true') {
-                const filename = path.basename(parsedUrl.pathname) || 'video.mp4';
-                responseHeaders['Content-Disposition'] = `attachment; filename="${filename}"`;
-                if (!responseHeaders['content-type']) {
-                    responseHeaders['content-type'] = 'application/octet-stream';
-                }
-            }
-
-            res.writeHead(proxyRes.statusCode, responseHeaders);
-
-            proxyRes.on('data', (chunk) => {
-                usageStats.streamBytes += chunk.length;
-                usageStats.totalBytes += chunk.length;
-            });
-
-            proxyRes.pipe(res);
-        });
-
-        proxyReq.on('error', (err) => {
-            console.error('Stream proxy error:', err.message);
-            if (!res.headersSent) {
-                res.status(500).send('Stream proxy failed: ' + err.message);
-            }
-        });
-
-        proxyReq.end();
     } catch (err) {
         console.error('Invalid URL in stream proxy:', err.message);
         res.status(400).send('Invalid URL format');

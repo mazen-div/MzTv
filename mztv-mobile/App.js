@@ -7,7 +7,8 @@ import {
   ActivityIndicator, 
   SafeAreaView, 
   BackHandler,
-  Platform 
+  Platform,
+  Linking 
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { StatusBar } from 'expo-status-bar';
@@ -18,7 +19,7 @@ import { StatusBar } from 'expo-status-bar';
 // Use 'http://10.0.2.2:3000' for Android Emulator
 // Use 'http://192.168.X.X:3000' for local Wi-Fi real device testing
 // Use 'https://your-app.onrender.com' for production hosting
-const BACKEND_URL = 'http://10.0.2.2:3000';
+const BACKEND_URL = 'https://mazikan-mztv-backend.hf.space';
 
 export default function App() {
   const [isLoading, setIsLoading] = useState(true);
@@ -37,13 +38,14 @@ export default function App() {
       return false; // Allow default behavior
     };
 
+    let subscription;
     if (Platform.OS === 'android') {
-      BackHandler.addEventListener('hardwareBackPress', onBackPress);
+      subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
     }
 
     return () => {
-      if (Platform.OS === 'android') {
-        BackHandler.removeEventListener('hardwareBackPress', onBackPress);
+      if (Platform.OS === 'android' && subscription) {
+        subscription.remove();
       }
     };
   }, [canGoBack]);
@@ -52,6 +54,20 @@ export default function App() {
     setHasError(false);
     setIsLoading(true);
     setKey(prev => prev + 1); // Triggers WebView re-render
+  };
+
+  const handleMessage = (event) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+      if (data.action === 'download' && data.url) {
+        console.log("Downloading via native bridge:", data.url);
+        Linking.openURL(data.url).catch(err => {
+          console.error("Failed to open download URL in system browser:", err);
+        });
+      }
+    } catch (e) {
+      console.error("Failed to parse WebView message:", e);
+    }
   };
 
   return (
@@ -70,9 +86,31 @@ export default function App() {
           mediaPlaybackRequiresUserAction={false}
           originWhitelist={['*']}
           mixedContentMode="always"
+          textZoom={100}
+          scalesPageToFit={false}
+          onMessage={handleMessage}
           
           // User Agent spoofing for mobile web browsers to enable full player capability
           userAgent="Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36"
+          
+          // Inject JS to improve WebView touch interactions for player controls and fake fullscreen
+          injectedJavaScript={`
+            (function() {
+              window.MZTV_MOBILE_VERSION = '1.2.0';
+              // Show player controls overlay on tap (touch devices don't have hover)
+              document.addEventListener('touchstart', function(e) {
+                var playerWrapper = document.querySelector('.player-wrapper');
+                if (playerWrapper && playerWrapper.contains(e.target)) {
+                  playerWrapper.classList.add('touched');
+                  clearTimeout(window._mztvControlsTimer);
+                  window._mztvControlsTimer = setTimeout(function() {
+                    playerWrapper.classList.remove('touched');
+                  }, 3000);
+                }
+              }, { passive: true });
+              true;
+            })();
+          `}
           
           // Track loading state
           onLoadStart={() => setIsLoading(true)}
@@ -83,8 +121,27 @@ export default function App() {
             setCanGoBack(navState.canGoBack);
           }}
           
+          // Intercept download requests and open them in the native browser (fallback)
+          onShouldStartLoadWithRequest={(request) => {
+            if (request.url.includes('/api/stream') && request.url.includes('download=true')) {
+              Linking.openURL(request.url).catch(err => {
+                console.error("Failed to open download URL in system browser:", err);
+              });
+              return false; // Prevent the webview from loading this URL internally
+            }
+            return true; // Let the webview load all other pages normally
+          }}
+          
           // Error handling
-          onError={() => setHasError(true)}
+          onError={(syntheticEvent) => {
+            const { nativeEvent } = syntheticEvent;
+            // Ignore aborted/cancelled errors (e.g. -3 on Android, -999 on iOS)
+            if (nativeEvent.code === -3 || nativeEvent.code === -999 || nativeEvent.description === 'net::ERR_ABORTED') {
+              console.log('Ignoring aborted/cancelled WebView error:', nativeEvent.description);
+              return;
+            }
+            setHasError(true);
+          }}
           onHttpError={(syntheticEvent) => {
             const { nativeEvent } = syntheticEvent;
             if (nativeEvent.statusCode >= 400) {

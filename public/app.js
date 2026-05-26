@@ -181,6 +181,9 @@ const DOM = {
     playerProgressHandle: document.getElementById('playerProgressHandle'),
     playerTimeDisplay: document.getElementById('playerTimeDisplay'),
     progressHoverTime: document.getElementById('progressHoverTime'),
+    bufferPctBadge: document.getElementById('bufferPctBadge'),
+    playerLoaderText: document.getElementById('playerLoaderText'),
+    bufferLoadingPct: document.getElementById('bufferLoadingPct'),
     
     // Modal
     mediaDetailsModal: document.getElementById('mediaDetailsModal'),
@@ -276,7 +279,84 @@ document.addEventListener('DOMContentLoaded', () => {
     checkSavedCredentials();
     initEventListeners();
     initPlayerEvents();
+    checkForAppUpdates();
 });
+
+// Global helper for React Native downloads interception
+function handleDownload(event, relativeOrAbsoluteUrl) {
+    if (window.ReactNativeWebView) {
+        event.preventDefault();
+        event.stopPropagation();
+        
+        let targetUrl = relativeOrAbsoluteUrl;
+        // If it is relative, convert to absolute
+        if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+            targetUrl = window.location.origin + (targetUrl.startsWith('/') ? '' : '/') + targetUrl;
+        }
+        
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+            action: 'download',
+            url: targetUrl
+        }));
+    }
+}
+
+// Check for Native App Updates
+async function checkForAppUpdates() {
+    // Only check if running inside the React Native App WebView
+    if (!window.ReactNativeWebView) {
+        return;
+    }
+    
+    // Get the current local app version (fallback to '1.0.0' for the old app)
+    const localVersion = window.MZTV_MOBILE_VERSION || '1.0.0';
+    
+    try {
+        const response = await fetch('/updates/version.json');
+        if (!response.ok) return;
+        
+        const data = await response.json();
+        
+        // Check if server version is newer
+        if (data && data.version && isNewerVersion(localVersion, data.version)) {
+            // Populate update modal info
+            const updateModal = document.getElementById('appUpdateModal');
+            const versionNumSpan = document.getElementById('updateVersionNumber');
+            const notesDiv = document.getElementById('updateNotesContent');
+            const downloadBtn = document.getElementById('btnDownloadUpdate');
+            const laterBtn = document.getElementById('btnLaterUpdate');
+            
+            if (updateModal && versionNumSpan && notesDiv && downloadBtn) {
+                versionNumSpan.textContent = data.version;
+                notesDiv.innerHTML = data.releaseNotes || 'تحسينات وإصلاحات عامة.';
+                downloadBtn.href = data.url;
+                downloadBtn.onclick = (e) => handleDownload(e, data.url);
+                
+                // Show modal
+                updateModal.classList.remove('hidden');
+                
+                laterBtn.addEventListener('click', () => {
+                    updateModal.classList.add('hidden');
+                });
+            }
+        }
+    } catch (err) {
+        console.error('Error checking for updates:', err);
+    }
+}
+
+// Helper function to compare semver versions
+function isNewerVersion(current, latest) {
+    const curParts = current.split('.').map(Number);
+    const latParts = latest.split('.').map(Number);
+    for (let i = 0; i < Math.max(curParts.length, latParts.length); i++) {
+        const curVal = curParts[i] || 0;
+        const latVal = latParts[i] || 0;
+        if (latVal > curVal) return true;
+        if (latVal < curVal) return false;
+    }
+    return false;
+}
 
 // Toast Helper
 function showToast(message, type = 'info') {
@@ -1413,6 +1493,7 @@ async function openMovieDetails(movieId) {
         // Setup download button (always proxy through server to inject Content-Disposition)
         const downloadUrl = `/api/stream?url=${encodeURIComponent(targetUrl)}&download=true`;
         DOM.modalDownloadBtn.href = downloadUrl;
+        DOM.modalDownloadBtn.onclick = (e) => handleDownload(e, downloadUrl);
         DOM.modalDownloadBtn.classList.remove('hidden');
         DOM.modalPlayBtn.classList.remove('hidden');
         
@@ -1684,7 +1765,7 @@ function renderEpisodes(epList, seriesName) {
                 <div class="episode-desc">${desc}</div>
             </div>
             <div class="episode-controls">
-                <a class="episode-download-btn" title="Download Episode" href="${downloadUrl}" target="_blank" download onclick="event.stopPropagation();">
+                <a class="episode-download-btn" title="Download Episode" href="${downloadUrl}" target="_blank" download onclick="handleDownload(event, '${downloadUrl}');">
                     <i class="fa-solid fa-download"></i>
                 </a>
                 <i class="fa-regular fa-circle-play episode-play-icon"></i>
@@ -1742,6 +1823,8 @@ function stopVideoPlayback() {
 function initVideoPlayer(url, type) {
     stopVideoPlayback();
     DOM.playerLoader.classList.remove('hidden');
+    if (DOM.playerLoaderText) DOM.playerLoaderText.textContent = 'Loading stream...';
+    if (DOM.bufferLoadingPct) DOM.bufferLoadingPct.textContent = '';
     
     // Reset quality selector UI
     if (DOM.qualityMenu) {
@@ -1756,6 +1839,8 @@ function initVideoPlayer(url, type) {
     if (type === 'live') {
         DOM.playerProgressContainer.classList.add('hidden');
         DOM.playerTimeDisplay.classList.add('hidden');
+        // Hide buffer badge for live TV
+        if (DOM.bufferPctBadge) DOM.bufferPctBadge.classList.add('hidden');
     } else {
         // VOD/Series seekable track
         DOM.playerProgressContainer.classList.remove('hidden');
@@ -1763,25 +1848,81 @@ function initVideoPlayer(url, type) {
         DOM.playerProgressFill.style.width = '0%';
         DOM.playerProgressBuffer.style.width = '0%';
         DOM.playerTimeDisplay.textContent = '00:00 / 00:00';
+        // Show buffer badge for VOD
+        if (DOM.bufferPctBadge) {
+            DOM.bufferPctBadge.classList.remove('hidden');
+            DOM.bufferPctBadge.textContent = '◯ 0%';
+        }
     }
 
-    // Determine engine based on url or preference
+    // Detect stream type
     const isM3u8 = url.toLowerCase().includes('.m3u8');
+    const isLive = (type === 'live');
     
     if (isM3u8 && Hls.isSupported()) {
+        // ======================================================
+        // HLS.js — Optimized config for fast start + caching
+        // ======================================================
         state.hlsPlayer = new Hls({
-            maxBufferLength: 10,
-            maxMaxBufferLength: 15
+            // --- FASTER START ---
+            // Start at lowest quality for instant playback, then ramp up
+            startLevel: -1,              // auto-select best level for network
+            abrEwmaDefaultEstimate: 500000,  // initial BW estimate: 500kbps
+            abrEwmaFastLive: 3.0,        // faster ABR adaptation (live)
+            abrEwmaSlowLive: 9.0,
+            abrEwmaFastVoD: 3.0,         // faster ABR adaptation (VOD)
+            abrEwmaSlowVoD: 9.0,
+
+            // --- BUFFER SIZES ---
+            // For live: keep buffer short to stay near live edge
+            // For VOD: large buffer = less rebuffering when seeking
+            maxBufferLength: isLive ? 8 : 60,           // seconds ahead to buffer
+            maxMaxBufferLength: isLive ? 12 : 120,      // absolute max buffer cap
+            maxBufferSize: isLive ? 30 * 1000 * 1000 : 120 * 1000 * 1000,  // bytes
+            maxBufferHole: 0.5,         // tolerate small gaps in buffer
+
+            // --- CACHE ALREADY-BUFFERED SEGMENTS (seek without rebuffering) ---
+            // Keep previously watched segments in memory
+            backBufferLength: isLive ? 0 : 90,  // seconds of back-buffer to retain
+            
+            // --- NETWORK / RETRY ---
+            manifestLoadingMaxRetry: 6,
+            manifestLoadingRetryDelay: 1000,
+            levelLoadingMaxRetry: 6,
+            levelLoadingRetryDelay: 1000,
+            fragLoadingMaxRetry: 6,
+            fragLoadingRetryDelay: 500,
+
+            // --- QUALITY SWITCHING ---
+            // Don't drop quality immediately on slow network — gives smoother experience
+            abrBandWidthFactor: 0.95,
+            abrBandWidthUpFactor: 0.7,
+
+            // --- PROGRESSIVE / WORKER ---
+            progressive: true,           // start playing as soon as first fragment decoded
+            enableWorker: true,          // use background web worker for demuxing
+            lowLatencyMode: isLive,      // low latency mode for live streams only
         });
+
         state.hlsPlayer.loadSource(url);
         state.hlsPlayer.attachMedia(DOM.video);
+
         state.hlsPlayer.on(Hls.Events.MANIFEST_PARSED, () => {
             setupHlsQualities();
             DOM.video.play().catch(e => console.log('Auto-play blocked, user action required.'));
         });
+
+        // Update loader text during fragment loading
+        state.hlsPlayer.on(Hls.Events.FRAG_BUFFERED, (event, data) => {
+            if (DOM.playerLoaderText && !DOM.playerLoader.classList.contains('hidden')) {
+                DOM.playerLoaderText.textContent = 'Buffering...';
+            }
+        });
+
         state.hlsPlayer.on(Hls.Events.LEVEL_SWITCHED, () => {
             updateQualityButtonLabel();
         });
+
         state.hlsPlayer.on(Hls.Events.ERROR, function (event, data) {
             if (data.fatal) {
                 switch (data.type) {
@@ -1805,13 +1946,17 @@ function initVideoPlayer(url, type) {
     // If it's MPEG-TS stream (.ts extension) or force-using mpegts.js
     else if ((url.toLowerCase().includes('.ts') || state.preferences.format === 'ts') && mpegts.getFeatureList().mseLivePlayback) {
         state.tsPlayer = mpegts.createPlayer({
-            type: 'mse', // Media Source Extensions
-            isLive: (type === 'live'),
+            type: 'mse',
+            isLive: isLive,
             url: url
         }, {
             enableWorker: true,
-            lazyLoadMaxKeepAliveDuration: 10,
-            seekType: 'range'
+            // Keep up to 60s of back-buffer so seeking doesn't re-download
+            lazyLoadMaxKeepAliveDuration: isLive ? 10 : 60,
+            // Prefer range requests for seeking (uses cached data)
+            seekType: 'range',
+            // Larger receive buffer for mobile stability
+            stashInitialSize: 1024 * 512,  // 512KB initial stash
         });
         
         state.tsPlayer.attachMediaElement(DOM.video);
@@ -1820,7 +1965,6 @@ function initVideoPlayer(url, type) {
         
         state.tsPlayer.on(mpegts.Events.ERROR, (type, detail, info) => {
             console.error('mpegts.js error:', type, detail, info);
-            // Non-fatal error often occurs at startup due to buffer, try playing
             setTimeout(() => {
                 if (DOM.video.paused) {
                     DOM.video.play().catch(e => {});
@@ -1828,7 +1972,7 @@ function initVideoPlayer(url, type) {
             }, 1000);
         });
     } 
-    // Fallback: Direct Source feeding (works in Safari natively or standard MP4 formats)
+    // Fallback: Direct Source feeding (Safari native / MP4)
     else {
         DOM.video.src = url;
         DOM.video.load();
@@ -2195,22 +2339,55 @@ function updateVolumeUI() {
 function toggleFullscreen() {
     const wrapper = DOM.playerWrapper;
     
-    if (!document.fullscreenElement) {
-        wrapper.requestFullscreen().catch(err => {
-            showToast(`Fullscreen failed: ${err.message}`, 'error');
-        });
+    // Detect WebView environment: requestFullscreen may be undefined or broken
+    const canNativeFullscreen = typeof document.fullscreenEnabled !== 'undefined' && document.fullscreenEnabled;
+    
+    if (canNativeFullscreen) {
+        // Desktop / browser: use native fullscreen API
+        if (!document.fullscreenElement) {
+            wrapper.requestFullscreen().catch(err => {
+                // Fall back to fake fullscreen if native fails
+                wrapper.classList.toggle('webview-fullscreen');
+            });
+        } else {
+            document.exitFullscreen();
+        }
     } else {
-        document.exitFullscreen();
+        // Android WebView: toggle CSS-based fake fullscreen
+        const isFullscreen = wrapper.classList.toggle('webview-fullscreen');
+        // Update fullscreen button icon
+        if (DOM.fullscreenBtn) {
+            DOM.fullscreenBtn.innerHTML = isFullscreen
+                ? '<i class="fa-solid fa-compress"></i>'
+                : '<i class="fa-solid fa-expand"></i>';
+        }
+        // Lock to landscape when entering fake fullscreen
+        if (isFullscreen && window.screen && window.screen.orientation && window.screen.orientation.lock) {
+            window.screen.orientation.lock('landscape').catch(() => {});
+        } else if (!isFullscreen && window.screen && window.screen.orientation && window.screen.orientation.unlock) {
+            window.screen.orientation.unlock();
+        }
     }
 }
 
 // Request fullscreen on player wrapper
 function requestFullscreenPlayer() {
     const wrapper = DOM.playerWrapper;
-    if (!document.fullscreenElement) {
-        wrapper.requestFullscreen().catch(err => {
-            console.warn(err);
-        });
+    const canNativeFullscreen = typeof document.fullscreenEnabled !== 'undefined' && document.fullscreenEnabled;
+    if (canNativeFullscreen) {
+        if (!document.fullscreenElement) {
+            wrapper.requestFullscreen().catch(err => {
+                console.warn(err);
+            });
+        }
+    } else {
+        // In WebView: auto-trigger fake fullscreen for movies/VOD
+        if (!wrapper.classList.contains('webview-fullscreen')) {
+            wrapper.classList.add('webview-fullscreen');
+            if (DOM.fullscreenBtn) {
+                DOM.fullscreenBtn.innerHTML = '<i class="fa-solid fa-compress"></i>';
+            }
+        }
     }
 }
 
@@ -2325,26 +2502,56 @@ async function updateMediaCacheSize() {
 }
 
 function updateBufferProgress() {
-    if (state.currentStream && state.currentStream.type !== 'live') {
-        const video = DOM.video;
-        const duration = video.duration || 0;
-        if (duration > 0 && video.buffered && video.buffered.length > 0) {
-            const currentTime = video.currentTime;
-            let activeRangeEnd = 0;
-            
-            for (let i = 0; i < video.buffered.length; i++) {
-                if (currentTime >= video.buffered.start(i) && currentTime <= video.buffered.end(i)) {
-                    activeRangeEnd = video.buffered.end(i);
-                    break;
-                }
-            }
-            
-            if (activeRangeEnd === 0) {
-                activeRangeEnd = video.buffered.end(video.buffered.length - 1);
-            }
-            
-            const pct = (activeRangeEnd / duration) * 100;
-            DOM.playerProgressBuffer.style.width = `${pct}%`;
+    if (!state.currentStream || state.currentStream.type === 'live') return;
+    
+    const video = DOM.video;
+    const duration = video.duration || 0;
+    if (duration <= 0 || !video.buffered || video.buffered.length === 0) return;
+
+    const currentTime = video.currentTime;
+    let maxBufferedEnd = 0;
+    let activeRangeEnd = 0;
+
+    // Find buffered range that covers current position
+    // AND track the maximum buffered position across all ranges
+    for (let i = 0; i < video.buffered.length; i++) {
+        const start = video.buffered.start(i);
+        const end = video.buffered.end(i);
+        if (end > maxBufferedEnd) maxBufferedEnd = end;
+        if (currentTime >= start && currentTime <= end) {
+            activeRangeEnd = end;
         }
+    }
+
+    // Use max buffered end to show the full extent of cached data
+    if (activeRangeEnd === 0) {
+        activeRangeEnd = maxBufferedEnd;
+    }
+    
+    // Update progress bar buffer fill (shows extent of cached data ahead)
+    const bufPct = Math.min((activeRangeEnd / duration) * 100, 100);
+    DOM.playerProgressBuffer.style.width = `${bufPct}%`;
+
+    // Update buffer % badge
+    if (DOM.bufferPctBadge) {
+        // Show total buffered time ahead of current position
+        const bufferedAheadSecs = Math.max(activeRangeEnd - currentTime, 0);
+        const totalBufferedPct = Math.round((maxBufferedEnd / duration) * 100);
+        
+        // Color-code by buffer health
+        if (totalBufferedPct >= 80) {
+            DOM.bufferPctBadge.style.color = '#66fcf1';   // teal = fully buffered
+        } else if (totalBufferedPct >= 30) {
+            DOM.bufferPctBadge.style.color = '#f5c842';   // yellow = mid
+        } else {
+            DOM.bufferPctBadge.style.color = '#ff6b6b';   // red = low buffer
+        }
+        DOM.bufferPctBadge.textContent = `◉ ${totalBufferedPct}%`;
+    }
+
+    // Also update loading overlay's mini buffer display while buffering
+    if (DOM.bufferLoadingPct && !DOM.playerLoader.classList.contains('hidden')) {
+        const ahead = Math.max(activeRangeEnd - currentTime, 0);
+        DOM.bufferLoadingPct.textContent = `${ahead.toFixed(1)}s buffered`;
     }
 }

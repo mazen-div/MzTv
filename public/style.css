@@ -813,6 +813,7 @@ select:focus,
 
 .player-wrapper:hover .player-controls-overlay,
 .player-wrapper.paused .player-controls-overlay,
+.player-wrapper.touched .player-controls-overlay,
 .player-controls-overlay:focus-within {
     opacity: 1;
     pointer-events: auto;
@@ -840,6 +841,17 @@ select:focus,
 .player-loader p {
     font-size: 0.85rem;
     color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+
+/* Buffered seconds display shown in the loading overlay */
+.buffer-loading-pct {
+    font-size: 0.72rem;
+    color: var(--primary);
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    font-family: monospace;
+    opacity: 0.8;
 }
 
 .player-watermark {
@@ -911,6 +923,19 @@ select:focus,
     background-color: var(--accent);
     display: inline-block;
     box-shadow: 0 0 8px var(--accent);
+}
+
+/* Buffer/cache percentage badge — color set dynamically by JS based on buffer health */
+.badge-buffer {
+    background-color: rgba(0, 0, 0, 0.35);
+    border-color: rgba(255, 255, 255, 0.1);
+    color: #66fcf1;   /* default: teal (good buffer) */
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.3px;
+    transition: color 0.5s ease;
+    font-family: monospace;
+    font-size: 0.68rem;
+    backdrop-filter: blur(4px);
 }
 
 .middle-controls {
@@ -1177,12 +1202,15 @@ select:focus,
 
 .media-categories {
     border-right: 1px solid var(--border-color);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
 }
 
 .media-content-pane {
     display: flex;
     flex-direction: column;
-    flex-grow: 1;
     overflow: hidden;
     height: 100%;
     min-height: 0;
@@ -1219,17 +1247,21 @@ select:focus,
 }
 
 .media-grid {
-    flex-grow: 1;
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 20px;
-    padding: 24px;
-    overflow-y: auto;
+    /* Use flex: 1 so it fills the remaining space in the flex-column parent */
+    flex: 1;
     min-height: 0;
+    overflow-y: auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 16px;
+    padding: 20px;
+    /* Rows size to content — this prevents cards from being squished */
+    align-content: start;
 }
 
 #moviesGrid {
-    grid-template-columns: repeat(4, 1fr) !important;
+    /* Keep 4 columns on wide desktop, auto-fill handles mobile */
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)) !important;
 }
 
 /* Pagination Styling */
@@ -1273,7 +1305,7 @@ select:focus,
     text-align: center;
 }
 
-/* MEDIA CARD styling (Netflix style) */
+/* MEDIA CARD styling (Netflix-style poster cards) */
 .media-card {
     background-color: var(--bg-surface);
     border-radius: var(--radius-md);
@@ -1287,27 +1319,31 @@ select:focus,
 }
 
 .media-card:hover {
-    transform: translateY(-8px);
+    transform: translateY(-6px);
     border-color: rgba(var(--primary-rgb), 0.4);
     box-shadow: var(--shadow-lg), 0 5px 15px rgba(0, 0, 0, 0.4);
 }
 
+/* Poster: use padding-bottom % trick for reliable 2:3 aspect ratio in any layout */
 .media-card-poster {
     width: 100%;
-    aspect-ratio: 2/3;
     position: relative;
     background-color: #090a0f;
-    display: flex;
-    align-items: center;
-    justify-content: center;
     overflow: hidden;
+    /* 2:3 ratio = 150% padding-bottom */
+    padding-bottom: 150%;
+    height: 0;
 }
 
 .media-card-poster img {
+    position: absolute;
+    top: 0;
+    left: 0;
     width: 100%;
     height: 100%;
     object-fit: cover;
     transition: transform 0.5s ease;
+    display: block;
 }
 
 .media-card:hover .media-card-poster img {
@@ -1315,7 +1351,11 @@ select:focus,
 }
 
 .media-card-poster i {
-    font-size: 3rem;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 2.5rem;
     color: var(--text-muted);
 }
 
@@ -1908,126 +1948,224 @@ input:checked + .slider:before {
     font-weight: 700;
 }
 
+/* HOME HEADER */
+.home-header {
+    flex-shrink: 0;
+}
+
+.home-subtitle {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    font-weight: 400;
+    margin-left: 8px;
+}
+
 /* HOME VIEW & CARDS */
 .home-container {
-    padding: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    padding: 24px;
     flex-grow: 1;
+    overflow-y: auto;
 }
 
 .home-grid {
     display: grid;
-    grid-template-columns: 1fr;
-    gap: 32px;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
     width: 100%;
     max-width: 1100px;
+    margin: 0 auto;
 }
 
-@media (min-width: 768px) {
+/* Single column on small screens */
+@media (max-width: 600px) {
     .home-grid {
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: 1fr;
     }
 }
 
+/* ===== DASHBOARD CARD (New poster style) ===== */
 .dashboard-card {
     background-color: var(--bg-surface);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
-    padding: 32px 24px;
-    text-align: center;
     position: relative;
     cursor: pointer;
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
-    height: 320px;
     transition: var(--transition);
 }
 
 .dashboard-card:hover {
-    transform: translateY(-10px);
+    transform: translateY(-8px);
     box-shadow: var(--shadow-lg);
 }
 
-/* Card custom neon colors */
-.live-card:hover {
-    border-color: rgba(var(--accent-rgb), 0.4);
-    box-shadow: 0 10px 30px rgba(var(--accent-rgb), 0.15);
+/* POSTER section — top 2/3 of the card with gradient background */
+.home-card-poster {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 3/2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    flex-shrink: 0;
 }
 
-.movies-card:hover {
-    border-color: rgba(var(--primary-rgb), 0.4);
-    box-shadow: 0 10px 30px rgba(var(--primary-rgb), 0.15);
+.live-poster {
+    background: linear-gradient(135deg, #0d2137 0%, #0a4a6e 50%, #0d6a8f 100%);
 }
 
-.series-card:hover {
-    border-color: rgba(var(--secondary-rgb), 0.4);
-    box-shadow: 0 10px 30px rgba(var(--secondary-rgb), 0.15);
+.movies-poster {
+    background: linear-gradient(135deg, #1a0d37 0%, #3d1a6e 50%, #6a0d8f 100%);
 }
 
-.dashboard-card .card-icon {
-    font-size: 3rem;
-    margin-bottom: 20px;
-    background: linear-gradient(135deg, #fff 30%, #a1a1a1 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+.series-poster {
+    background: linear-gradient(135deg, #0d2b1a 0%, #0a6e3a 50%, #0d8f5a 100%);
+}
+
+/* Glow orb behind the icon */
+.home-card-glow {
+    position: absolute;
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    filter: blur(40px);
+    opacity: 0.5;
+    pointer-events: none;
+    transition: opacity 0.4s ease, transform 0.4s ease;
+}
+
+.live-poster .home-card-glow {
+    background: var(--primary);
+}
+
+.movies-poster .home-card-glow {
+    background: var(--secondary);
+}
+
+.series-poster .home-card-glow {
+    background: var(--accent);
+}
+
+.dashboard-card:hover .home-card-glow {
+    opacity: 0.9;
+    transform: scale(1.3);
+}
+
+/* Big centered icon */
+.home-card-icon-wrap {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.08);
+    border: 2px solid rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(4px);
+    transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275),
+                background 0.3s ease;
+}
+
+.home-card-icon-wrap i {
+    font-size: 2.4rem;
+    color: #fff;
     transition: var(--transition);
 }
 
-.live-card:hover .card-icon {
-    background: linear-gradient(135deg, var(--accent) 30%, #fff 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+.live-card:hover .home-card-icon-wrap {
+    background: rgba(0, 210, 255, 0.2);
+    border-color: var(--primary);
+    transform: scale(1.12);
 }
 
-.movies-card:hover .card-icon {
-    background: linear-gradient(135deg, var(--primary) 30%, #fff 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+.movies-card:hover .home-card-icon-wrap {
+    background: rgba(157, 78, 221, 0.25);
+    border-color: var(--secondary);
+    transform: scale(1.12);
 }
 
-.series-card:hover .card-icon {
-    background: linear-gradient(135deg, var(--secondary) 30%, #fff 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+.series-card:hover .home-card-icon-wrap {
+    background: rgba(69, 162, 158, 0.25);
+    border-color: var(--accent);
+    transform: scale(1.12);
 }
 
-.dashboard-card h3 {
-    font-family: var(--font-heading);
-    font-size: 1.4rem;
-    font-weight: 700;
-    margin-bottom: 12px;
-}
-
-.dashboard-card p {
-    font-size: 0.85rem;
-    color: var(--text-secondary);
-    line-height: 1.5;
-    margin-bottom: 16px;
+/* CARD INFO section — below the poster */
+.home-card-info {
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
     flex-grow: 1;
 }
 
-.card-status {
-    font-size: 0.8rem;
+.home-card-title {
+    font-family: var(--font-heading);
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.home-card-desc {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+    margin: 0;
+}
+
+.home-card-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.75rem;
     font-weight: 600;
-    color: var(--text-muted);
+    color: var(--primary);
+    margin-top: 4px;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.3px;
+}
+
+/* Card hover border accent */
+.live-card {
+    border-color: rgba(0, 210, 255, 0.15);
+}
+.live-card:hover {
+    border-color: rgba(0, 210, 255, 0.45);
+    box-shadow: 0 12px 40px rgba(0, 210, 255, 0.2);
+}
+
+.movies-card {
+    border-color: rgba(157, 78, 221, 0.15);
+}
+.movies-card:hover {
+    border-color: rgba(157, 78, 221, 0.45);
+    box-shadow: 0 12px 40px rgba(157, 78, 221, 0.2);
+}
+
+.series-card {
+    border-color: rgba(69, 162, 158, 0.15);
+}
+.series-card:hover {
+    border-color: rgba(69, 162, 158, 0.45);
+    box-shadow: 0 12px 40px rgba(69, 162, 158, 0.2);
 }
 
 /* Reload Icon */
 .card-reload-btn {
     position: absolute;
-    top: 16px;
-    right: 16px;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid var(--border-color);
-    color: var(--text-secondary);
-    width: 32px;
-    height: 32px;
+    top: 12px;
+    right: 12px;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.7);
+    width: 30px;
+    height: 30px;
     border-radius: 50%;
     cursor: pointer;
     display: flex;
@@ -2035,11 +2173,13 @@ input:checked + .slider:before {
     justify-content: center;
     transition: var(--transition);
     z-index: 5;
+    font-size: 0.75rem;
+    backdrop-filter: blur(4px);
 }
 
 .card-reload-btn:hover {
     color: #fff;
-    background-color: var(--bg-surface-hover);
+    background-color: rgba(0, 0, 0, 0.6);
     transform: rotate(180deg);
 }
 
@@ -2047,13 +2187,14 @@ input:checked + .slider:before {
 .card-loader {
     position: absolute;
     inset: 0;
-    background-color: rgba(13, 15, 23, 0.95);
+    background-color: rgba(13, 15, 23, 0.92);
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: 12px;
     z-index: 4;
+    backdrop-filter: blur(4px);
 }
 
 .card-loader .spinner {
@@ -2066,11 +2207,15 @@ input:checked + .slider:before {
 }
 
 .live-card .card-loader .spinner {
-    border-top-color: var(--accent);
+    border-top-color: var(--primary);
+}
+
+.movies-card .card-loader .spinner {
+    border-top-color: var(--secondary);
 }
 
 .series-card .card-loader .spinner {
-    border-top-color: var(--secondary);
+    border-top-color: var(--accent);
 }
 
 .loader-percent {
@@ -2116,7 +2261,7 @@ input:checked + .slider:before {
     }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 768px) and (orientation: portrait) {
     .app-dashboard {
         flex-direction: column;
     }
@@ -2128,6 +2273,14 @@ input:checked + .slider:before {
         align-items: center;
         justify-content: space-between;
         padding: 0 16px;
+        order: 2; /* Move nav bar to bottom */
+    }
+    
+    /* Main content area fills the space above the bottom nav */
+    .dashboard-content {
+        order: 1;
+        flex: 1;
+        overflow: hidden;
     }
     
     .sidebar-header {
@@ -2144,6 +2297,7 @@ input:checked + .slider:before {
     .nav-link {
         padding: 8px 12px;
         gap: 6px;
+        font-size: 1.1rem;
     }
     
     .nav-link span {
@@ -2159,8 +2313,14 @@ input:checked + .slider:before {
         grid-template-rows: auto auto 1fr;
     }
     
-    .live-categories-sidebar, .live-channels-pane {
-        max-height: 200px;
+    .live-categories-sidebar {
+        max-height: 130px;
+        overflow-x: auto;
+        overflow-y: hidden;
+    }
+    
+    .live-channels-pane {
+        max-height: 180px;
     }
     
     .grid-layout-with-sidebar {
@@ -2169,7 +2329,25 @@ input:checked + .slider:before {
     }
     
     .media-categories {
-        max-height: 160px;
+        max-height: 110px;
+        overflow-x: auto;
+        overflow-y: hidden;
+    }
+    
+    /* 2-column movie grid in portrait */
+    #moviesGrid, .media-grid {
+        grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)) !important;
+        gap: 10px !important;
+        padding: 10px !important;
+    }
+
+    /* Home grid: 1 card per row on small portrait screens */
+    .home-grid {
+        grid-template-columns: 1fr !important;
+    }
+
+    .home-card-poster {
+        aspect-ratio: 5/2 !important;
     }
     
     .media-controls-bar {
@@ -2297,4 +2475,238 @@ input:checked + .slider:before {
     vertical-align: middle;
     margin-right: 6px;
     border: 1px solid var(--primary);
+}
+
+/* ========================================================
+   LANDSCAPE MOBILE OPTIMIZATIONS (MzTv App Shell)
+   ======================================================== */
+@media (max-width: 950px) and (orientation: landscape) {
+    /* Collapse main app sidebar to save horizontal space */
+    .app-sidebar {
+        width: 70px !important;
+    }
+    
+    /* Center align icons and hide sidebar text labels */
+    .sidebar-header {
+        justify-content: center;
+        padding: 12px 0;
+    }
+    .sidebar-header .logo-text,
+    .sidebar-user-panel .user-details,
+    .sidebar-user-panel .logout-btn,
+    .nav-link span {
+        display: none !important;
+    }
+    
+    .nav-link {
+        justify-content: center;
+        padding: 14px 0;
+        border-radius: 0;
+    }
+    
+    .sidebar-user-panel {
+        justify-content: center;
+        padding: 16px 0;
+    }
+
+    /* Narrow down the secondary category sidebar for Movies/Series */
+    .grid-layout-with-sidebar {
+        grid-template-columns: 180px 1fr !important;
+    }
+    
+    .media-categories {
+        width: 180px !important;
+    }
+
+    /* No min-height override needed — padding-bottom: 150% handles poster sizing */
+
+    /* Narrow down the Live TV category and channel lists to widen the player area */
+    .live-layout {
+        grid-template-columns: 140px 180px 1fr !important;
+    }
+    
+    .live-categories-sidebar {
+        width: 140px !important;
+    }
+    
+    .live-channels-pane {
+        width: 180px !important;
+    }
+
+    /* Prevent scrolling the entire player pane; lock player at top and scroll EPG only */
+    .live-player-pane {
+        display: flex !important;
+        flex-direction: column !important;
+        height: 100% !important;
+        overflow: hidden !important;
+    }
+    
+    .player-wrapper {
+        flex-shrink: 0 !important;
+    }
+    
+    .live-epg-details {
+        flex-grow: 1 !important;
+        overflow-y: auto !important;
+        padding: 12px 16px !important;
+    }
+
+    /* Re-scale the movie cards grid layout to 3 columns */
+    #moviesGrid {
+        grid-template-columns: repeat(3, 1fr) !important;
+        gap: 12px !important;
+        padding: 12px !important;
+    }
+}
+
+@media (max-width: 720px) and (orientation: landscape) {
+    /* Further compress sidebars for smaller phone screens */
+    .grid-layout-with-sidebar {
+        grid-template-columns: 140px 1fr !important;
+    }
+    .media-categories {
+        width: 140px !important;
+    }
+    
+    .live-layout {
+        grid-template-columns: 110px 150px 1fr !important;
+    }
+    
+    .live-categories-sidebar {
+        width: 110px !important;
+    }
+    
+    .live-channels-pane {
+        width: 150px !important;
+    }
+    
+    /* No min-height needed — padding-bottom: 150% handles poster sizing */
+
+    /* Scale down the movie grid layout for narrow screens */
+    #moviesGrid, .media-grid {
+        grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)) !important;
+    }
+}
+
+/* 
+   GLOBAL SCALE DOWN TO PREVENT OVERSIZED "ZOOMED-IN" LOOK ON MOBILE PHONES
+   All dimensions using 'rem' units will scale down proportionally.
+*/
+@media (max-width: 950px) {
+    html {
+        font-size: 13px !important;
+    }
+}
+
+@media (max-width: 720px) {
+    html {
+        font-size: 11px !important;
+    }
+}
+
+
+/* =======================================================
+   WEBVIEW FAKE FULLSCREEN MODE
+   Triggered by JS when document.requestFullscreen() is
+   not available (Android WebView environment).
+   ======================================================= */
+.player-wrapper.webview-fullscreen {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    z-index: 99999 !important;
+    aspect-ratio: unset !important;
+    background: #000 !important;
+}
+
+.player-wrapper.webview-fullscreen #mainVideoPlayer {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: contain !important;
+}
+
+/* When in fake fullscreen, hide the player controls overlay until touched */
+.player-wrapper.webview-fullscreen .player-controls-overlay {
+    opacity: 0;
+    pointer-events: none;
+}
+.player-wrapper.webview-fullscreen:active .player-controls-overlay,
+.player-wrapper.webview-fullscreen.paused .player-controls-overlay,
+.player-wrapper.webview-fullscreen.touched .player-controls-overlay,
+.player-wrapper.webview-fullscreen .player-controls-overlay:focus-within {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* UPDATE MODAL SPECIFIC STYLING */
+.update-card {
+    max-width: 500px;
+    padding: 30px;
+    text-align: center;
+    border: 1px solid var(--primary);
+    box-shadow: var(--shadow-lg), var(--shadow-glow);
+}
+
+.update-header {
+    margin-bottom: 20px;
+}
+
+.update-icon {
+    font-size: 3rem;
+    color: var(--primary);
+    margin-bottom: 15px;
+    display: inline-block;
+    filter: drop-shadow(0 0 10px rgba(0, 210, 255, 0.4));
+}
+
+.update-header h2 {
+    font-family: var(--font-heading);
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: #fff;
+    margin-top: 10px;
+}
+
+.update-body {
+    margin-bottom: 30px;
+    font-size: 0.95rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+.update-notes-title {
+    font-weight: 600;
+    color: #fff;
+    margin-top: 15px;
+    margin-bottom: 8px;
+    text-align: right;
+    direction: rtl;
+}
+
+.update-notes-content {
+    background-color: var(--bg-surface-hover);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 12px 16px;
+    text-align: right;
+    direction: rtl;
+    max-height: 120px;
+    overflow-y: auto;
+    font-size: 0.85rem;
+}
+
+.update-actions {
+    display: flex;
+    gap: 12px;
+}
+
+.update-actions .btn-primary {
+    flex: 2;
+    text-decoration: none;
+}
+
+.update-actions .btn-secondary {
+    flex: 1;
 }

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>MzTv - Premium IPTV Player</title>
     <link rel="icon" type="image/png" href="logo.png">
     <!-- Google Fonts -->
@@ -118,22 +118,33 @@
             
             <!-- VIEW: HOME (Main Page) -->
             <section id="homeView" class="dashboard-view">
-                <div class="content-header">
-                    <h2><i class="fa-solid fa-house"></i> Home Dashboard</h2>
+                <div class="content-header home-header">
+                    <h2><i class="fa-solid fa-play-circle"></i> MzTv Premium</h2>
+                    <span class="home-subtitle">Choose a category to start streaming</span>
                 </div>
                 
                 <div class="home-container scrollbar">
                     <div class="home-grid">
+
                         <!-- CARD: LIVE TV -->
                         <div class="dashboard-card live-card" id="cardLive">
                             <button class="card-reload-btn" id="reloadLiveBtn" title="Reload Live TV">
                                 <i class="fa-solid fa-arrows-rotate"></i>
                             </button>
-                            <div class="card-content" id="contentLive">
-                                <div class="card-icon"><i class="fa-solid fa-tv"></i></div>
-                                <h3>Live TV</h3>
-                                <p>Stream live TV channels, news, sports, and international broadcasts.</p>
-                                <span class="card-status" id="statusLive">Click to open</span>
+                            <!-- Poster-style top section -->
+                            <div class="home-card-poster live-poster">
+                                <div class="home-card-icon-wrap">
+                                    <i class="fa-solid fa-tv"></i>
+                                </div>
+                                <div class="home-card-glow"></div>
+                            </div>
+                            <!-- Info section below poster (like series card) -->
+                            <div class="home-card-info" id="contentLive">
+                                <h3 class="home-card-title">Live TV</h3>
+                                <p class="home-card-desc">Channels, news, sports &amp; international broadcasts.</p>
+                                <span class="home-card-status" id="statusLive">
+                                    <i class="fa-solid fa-circle-play"></i> Open
+                                </span>
                             </div>
                             <!-- Card loader overlay -->
                             <div class="card-loader hidden" id="loaderLive">
@@ -152,11 +163,18 @@
                             <button class="card-reload-btn" id="reloadMoviesBtn" title="Reload Movies">
                                 <i class="fa-solid fa-arrows-rotate"></i>
                             </button>
-                            <div class="card-content" id="contentMovies">
-                                <div class="card-icon"><i class="fa-solid fa-film"></i></div>
-                                <h3>Movies (VOD)</h3>
-                                <p>Watch on-demand movies, cinema releases, and search by genre.</p>
-                                <span class="card-status" id="statusMovies">Click to open</span>
+                            <div class="home-card-poster movies-poster">
+                                <div class="home-card-icon-wrap">
+                                    <i class="fa-solid fa-film"></i>
+                                </div>
+                                <div class="home-card-glow"></div>
+                            </div>
+                            <div class="home-card-info" id="contentMovies">
+                                <h3 class="home-card-title">Movies</h3>
+                                <p class="home-card-desc">On-demand movies, cinema releases &amp; genres.</p>
+                                <span class="home-card-status" id="statusMovies">
+                                    <i class="fa-solid fa-circle-play"></i> Open
+                                </span>
                             </div>
                             <div class="card-loader hidden" id="loaderMovies">
                                 <div class="spinner"></div>
@@ -173,11 +191,18 @@
                             <button class="card-reload-btn" id="reloadSeriesBtn" title="Reload TV Series">
                                 <i class="fa-solid fa-arrows-rotate"></i>
                             </button>
-                            <div class="card-content" id="contentSeries">
-                                <div class="card-icon"><i class="fa-solid fa-layer-group"></i></div>
-                                <h3>TV Series</h3>
-                                <p>Explore full seasons, watch episodes, and keep track of releases.</p>
-                                <span class="card-status" id="statusSeries">Click to open</span>
+                            <div class="home-card-poster series-poster">
+                                <div class="home-card-icon-wrap">
+                                    <i class="fa-solid fa-layer-group"></i>
+                                </div>
+                                <div class="home-card-glow"></div>
+                            </div>
+                            <div class="home-card-info" id="contentSeries">
+                                <h3 class="home-card-title">TV Series</h3>
+                                <p class="home-card-desc">Full seasons, episodes &amp; latest releases.</p>
+                                <span class="home-card-status" id="statusSeries">
+                                    <i class="fa-solid fa-circle-play"></i> Open
+                                </span>
                             </div>
                             <div class="card-loader hidden" id="loaderSeries">
                                 <div class="spinner"></div>
@@ -188,6 +213,7 @@
                                 <div class="card-progress-fill" id="progressFillSeries"></div>
                             </div>
                         </div>
+
                     </div>
                 </div>
             </section>
@@ -234,7 +260,8 @@
                             <div class="player-controls-overlay" id="playerControls">
                                 <div class="player-loader" id="playerLoader">
                                     <div class="spinner-large"></div>
-                                    <p>Buffering stream...</p>
+                                    <p id="playerLoaderText">Buffering stream...</p>
+                                    <span class="buffer-loading-pct" id="bufferLoadingPct"></span>
                                 </div>
 
                                 <div class="player-watermark">
@@ -249,6 +276,8 @@
                                     <div class="player-status-badges">
                                         <span class="badge badge-live"><span class="dot"></span> LIVE</span>
                                         <span class="badge" id="playerCodecBadge">TS</span>
+                                        <!-- Buffer cache percentage badge (shows for VOD/Series) -->
+                                        <span class="badge badge-buffer hidden" id="bufferPctBadge" title="Buffered / cached video data">&#9711; 0%</span>
                                     </div>
                                 </div>
 
@@ -615,6 +644,25 @@
                 <div class="episodes-list" id="episodesList">
                     <!-- Episodes dynamically generated -->
                 </div>
+            </div>
+        </div>
+    <!-- Native App Update Modal -->
+    <div id="appUpdateModal" class="modal-overlay hidden">
+        <div class="modal-card update-card">
+            <div class="update-header">
+                <i class="fa-solid fa-cloud-arrow-down update-icon"></i>
+                <h2>تحديث جديد متوفر!</h2>
+            </div>
+            <div class="update-body">
+                <p>يتوفر تحديث جديد لتطبيق MzTv للاندرويد (النسخة <span id="updateVersionNumber">1.1.0</span>).</p>
+                <p class="update-notes-title">ما الجديد في هذا التحديث:</p>
+                <div class="update-notes-content" id="updateNotesContent">
+                    تحسينات في الأداء وإصلاحات لمشاكل التشغيل.
+                </div>
+            </div>
+            <div class="update-actions">
+                <button id="btnLaterUpdate" class="btn-secondary">لاحقاً</button>
+                <a id="btnDownloadUpdate" href="#" class="btn-primary">تحميل التحديث الآن</a>
             </div>
         </div>
     </div>
